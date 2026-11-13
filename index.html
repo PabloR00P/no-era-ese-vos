@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>NO ERA ESE, VOS</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='20' y='18' width='24' height='40' rx='4' fill='%23c8102e'/%3E%3Crect x='20' y='24' width='24' height='4' fill='%23ffd23f'/%3E%3Crect x='20' y='48' width='24' height='4' fill='%23ffd23f'/%3E%3Crect x='26' y='28' width='12' height='20' fill='%23f4efe6'/%3E%3Cline x1='32' y1='18' x2='32' y2='8' stroke='%23f4efe6' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='6' r='5' fill='%23ffd23f' opacity='.9'/%3E%3Ccircle cx='32' cy='6' r='3' fill='%23ff3b4e' opacity='.8'/%3E%3C/svg%3E">
+<style>
+html,body{margin:0;height:100%;background:#0b0b10;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{display:block;width:100%;height:100%}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// NO ERA ESE, VOS — Nochebuena chapina: corta las mechas en el orden que dice la pista. A veces miente.
+const c = document.getElementById('c'), x = c.getContext('2d'), TAU = Math.PI * 2;
+const FONT = 'ui-monospace,Menlo,Consolas,monospace', INK = '#f4efe6', RED = '#ff3b4e', YEL = '#ffd23f', GRN = '#3ddc84';
+const COL = [['ROJO', RED], ['AZUL', '#3b82ff'], ['VERDE', GRN], ['AMARILLO', YEL], ['ROSA', '#ff7ad9'], ['BLANCO', INK], ['MORADO', '#a06bff']];
+const RULES = [
+  ['CORTÁ DEL MÁS CHIQUITO AL MÁS GRANDOTE', 'DEL NÚMERO MÁS CHIQUITO AL MÁS GRANDOTE', 'DESDE EL MÁS CHIQUITO AL MÁS GRANDOTE'],
+  ['CORTÁ DEL MÁS GRANDOTE AL MÁS CHIQUITO', 'DEL NÚMERO MÁS GRANDOTE AL MÁS CHIQUITO', 'DESDE EL MÁS GRANDOTE AL MÁS CHIQUITO'],
+  ['CORTÁ EN ESTE ORDEN', 'SEGUÍ ESTE ORDEN, VOS', 'UNO POR UNO, ASÍ MIRÁ:'],
+  ['LEÉ LA PALABRA, OLVIDATE DEL COLOR', 'LO QUE DICE, NO CÓMO SE VE', 'HACELE CASO AL TEXTO, NO AL COLOR'],
+  ['MIRÁ EL COLOR, OLVIDATE DE LA PALABRA', 'CÓMO SE VE, NO LO QUE DICE', 'HACELE CASO AL COLOR, NO AL TEXTO']];
+const TAUNTS = ['PUCHIS, TE QUEDASTE SIN TAMAL', 'YA DIERON LAS 12 Y VOS AHÍ', 'NO ERA ESE, VOS', 'PUCHIS, VOS...', 'PUCHIS, QUÉ TRONIDO', 'SE DESPERTÓ TODA LA CUADRA', 'NI EL PONCHE TE SALVA', 'PUCHIS, YA MERITO', 'HASTA EL VOLCÁN DIJO PUCHIS', 'QUÉ CLAVO, VOS', '¡CORRAN, MUCHÁ!', 'SE ARMÓ EL RELAJO'];
+const OOPS = ['¡NO ERA ESE, VOS!', '¡PUCHIS!', '¡PUCHIS, VOS!', '¡PUCHICAS!', '¡A LA GRAN PUCHIS!', '¡PUCHIS, ESE NO!', '¡QUÉ CLAVO!', '¡SHO!'], OKS = ['DESACTIVADA', '¡BUENA, VOS!', '¡CALIDAD!', '¡PUCHIS, SÍ!', '¡CABAL!', '¡CHILERO!', '¡BIEN PILAS!'];
+const BOOMS = ['¡PUM!', '¡PUCHIS!'];
+let boomTxt = '';
+const STARS = []; for (let i = 0; i < 45; i++) STARS.push([Math.random(), Math.random(), 1 + Math.random() * 3, Math.random() * 6, 1 + Math.random() * 1.5]);
+const FIRE = ['#ff3b4e', '#ff8c2b', '#ffd23f'];
+let rule;
+
+let W, H, D, K, CX, BX, BW, WY0, WY1;
+let st = 0;                       // 0 menú, 1 jugando, 2 explotó, 3 desactivada (pausa)
+let T = 0, last = 0, deadAt = 0, tr = 0;
+let lvl = 1, t, age, nw, type, liar, sh, mem, dark, wires = [], seq, clue, pos, lastQ;
+let flash = 0, flashCol = '#fff', shake = 0, msg = '', msgT = 0, taunt = '';
+let parts = [], best = 0, ac, FX, FY, fwT = 0, msgCol = RED, okTxt = '';
+try { best = +localStorage.getItem('nee') || 0 } catch (e) {}
+
+function rs() {
+  D = Math.min(devicePixelRatio || 1, 2);
+  W = c.width = innerWidth * D; H = c.height = innerHeight * D;
+  BW = Math.min(W * .92, 500 * D); CX = W / 2; BX = CX - BW / 2;
+  K = BW / D / 360; WY0 = H * .42; WY1 = H * .955;
+  FX = W * .86; FY = H * .765;
+}
+addEventListener('resize', rs); rs();
+
+// ---------- sonido (todo por código) ----------
+function beep(f, d, ty, v) {
+  if (!ac) return;
+  try {
+    const o = ac.createOscillator(), g = ac.createGain(), n = ac.currentTime;
+    o.type = ty || 'square'; o.frequency.value = f;
+    g.gain.setValueAtTime(v || .07, n); g.gain.exponentialRampToValueAtTime(.001, n + d);
+    o.connect(g); g.connect(ac.destination); o.start(n); o.stop(n + d);
+  } catch (e) {}
+}
+function boom() {
+  if (!ac) return;
+  try {
+    const n = ac.sampleRate, b = ac.createBuffer(1, n, n), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2.5);
+    const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = b; f.type = 'lowpass'; f.frequency.value = 900; g.gain.value = .6;
+    s.connect(f); f.connect(g); g.connect(ac.destination); s.start();
+  } catch (e) {}
+}
+
+// ---------- música: posada chapina generada por código — tortuga "tu-cu-tí-cu-tu", chinchín y pito de agua ----------
+let MG, NB, nextT = 0, stp = 0, mus = 1;
+try { mus = localStorage.getItem('neem') != '0' } catch (e) {}
+function knock(f, tm, d, v) {          // golpe seco en el caparazón, con caída de tono
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'triangle'; o.frequency.setValueAtTime(f * 1.5, tm); o.frequency.exponentialRampToValueAtTime(f, tm + .02);
+  g.gain.setValueAtTime(v, tm); g.gain.exponentialRampToValueAtTime(.0001, tm + d);
+  o.connect(g); g.connect(MG); o.start(tm); o.stop(tm + d + .02);
+}
+function chin(tm, v) {                 // chinchín: ruido agudo y corto
+  if (!NB) { NB = ac.createBuffer(1, 2400, ac.sampleRate); const d = NB.getChannelData(0); for (let i = 0; i < 2400; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / 2400) }
+  const b = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+  b.buffer = NB; f.type = 'highpass'; f.frequency.value = 5500; g.gain.value = v;
+  b.connect(f); f.connect(g); g.connect(MG); b.start(tm);
+}
+function pito(tm, d, f) {              // pito de agua: silbido agudo que gorjea
+  const o = ac.createOscillator(), l = ac.createOscillator(), lg = ac.createGain(), g = ac.createGain();
+  o.frequency.value = f; l.frequency.value = 17; lg.gain.value = f * .07; l.connect(lg); lg.connect(o.frequency);
+  g.gain.setValueAtTime(.0001, tm); g.gain.linearRampToValueAtTime(.05, tm + .03); g.gain.setValueAtTime(.05, tm + d * .8); g.gain.exponentialRampToValueAtTime(.0001, tm + d);
+  o.connect(g); g.connect(MG); o.start(tm); l.start(tm); o.stop(tm + d + .02); l.stop(tm + d + .02);
+}
+// Ritmo de tortuga tal como lo grabó José Pablo (segunda grabación), golpe por golpe.
+// Tiempos en pulsos (1 pulso = 230 ms en su grabación); 1 = TIC (agudo), 0 = TUC (grave).
+// frase:  TUC TUC TIC · tucu · · | TUC TUC TIC · tucu · · | TUC TUC TIC · tucu TIC TUC TUC TIC · tucu · ·
+const A = [[0, 0], [1, 0], [2, 1], [3.41, 0], [3.96, 0]], P = 6.7, LEN = 26.06;
+const EV = [...A, ...A.map(e => [e[0] + P, e[1]]), ...A.map(e => [e[0] + P * 2, e[1]]), ...[[5, 1], [6, 0], [6.9, 0], [7.97, 1], [9.42, 0], [9.92, 0]].map(e => [e[0] + P * 2, e[1]])];
+let pt = 0;
+function music() {
+  if (!ac || !MG) return;
+  try {
+    const now = ac.currentTime, slow = st == 2;
+    const dur = slow ? .38 : Math.max(.15, .23 - lvl * .0035) * (st == 1 && t < 4 ? .72 : 1);   // se acelera con el nivel y cuando queda poco tiempo
+    if (nextT < now - .3) nextT = now + .05;
+    while (nextT < now + .12) {
+      const e = EV[stp], last = stp == EV.length - 1;
+      knock(e[1] ? 820 : 540, nextT, .11, e[1] ? .36 : .3);
+      if (!slow) { chin(nextT, e[1] ? .1 : .05); if (last) pito(nextT + dur * .8, dur * 1.3, (pt = !pt) ? 2100 : 2500) }   // el pito contesta después del remate
+      nextT += ((last ? LEN : EV[stp + 1][0]) - e[0]) * dur; stp = last ? 0 : stp + 1;
+    }
+  } catch (e) {}
+}
+function initAudio() {
+  if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); MG = ac.createGain(); MG.gain.value = mus ? .55 : 0; MG.connect(ac.destination) } catch (e) {} }
+}
+initAudio();   // si el navegador lo permite, el menú suena desde que carga
+function toggleMus() {
+  mus = !mus; if (MG) MG.gain.value = mus ? .55 : 0;
+  try { localStorage.setItem('neem', mus ? '1' : '0') } catch (e) {}
+}
+
+// ---------- lógica ----------
+const shuf = a => { for (let i = a.length; i > 1;) { const j = Math.random() * i-- | 0;[a[i], a[j]] = [a[j], a[i]] } return a };
+const slotY = i => WY0 + (i + .5) * (WY1 - WY0) / nw;
+
+function gen(n) {
+  lvl = n; pos = 0; age = 0; liar = sh = mem = dark = 0;
+  // difícil desde la primera: la bomba 1 ya trae 6 mechas, pista al azar y hasta 2 trampas
+  type = Math.random() * 5 | 0;
+  const p = Math.min(.65, .32 + n * .04), m = shuf(['l', 's', 'm', 'd']).filter(() => Math.random() < p).slice(0, 2);
+  liar = m.includes('l'); sh = m.includes('s'); mem = m.includes('m'); dark = m.includes('d');
+  rule = RULES[type][Math.random() * 3 | 0];
+  nw = n < 7 ? 6 : 7;
+  const cs = shuf([0, 1, 2, 3, 4, 5, 6]).slice(0, nw), ns = shuf([1, 2, 3, 4, 5, 6, 7, 8, 9]).slice(0, nw);
+  wires = cs.map((c, i) => ({ c, n: ns[i], slot: i, y: slotY(i), cut: 0, sag: Math.random() - .5 }));
+  const order = wires.map((_, i) => i);
+  clue = [];
+  if (type < 2) order.sort((a, b) => (wires[a].n - wires[b].n) * (type ? -1 : 1));
+  else {
+    shuf(order);
+    clue = order.map(i => {
+      const c = wires[i].c; let o;
+      do o = cs[Math.random() * nw | 0]; while (o == c);
+      return type == 2 ? { s: COL[c][0], c: INK } : type == 3 ? { s: COL[c][0], c: COL[o][1] } : { s: COL[o][0], c: COL[c][1] };
+    });
+  }
+  seq = liar ? order.slice().reverse() : order;
+  t = Math.max(nw * 1.1 + 1.5, nw * 2.2 + 4 - (n + 9) * .45);
+  lastQ = Math.ceil(t);
+}
+function start() { st = 1; parts = []; msgT = 0; stp = 0; gen(1) }
+function die() {
+  st = 2; deadAt = T; shake = .8; flash = 1; flashCol = '#ffb347';
+  taunt = TAUNTS[Math.random() * TAUNTS.length | 0]; boomTxt = BOOMS[Math.random() * 2 | 0];
+  if (lvl - 1 > best) { best = lvl - 1; try { localStorage.setItem('nee', best) } catch (e) {} }
+  burst(CX, H * .5, 90, [YEL, RED, '#ff8c2b', INK], 900); fwT = .3;
+  boom(); if (ac) { nextT = ac.currentTime + 1.5; stp = 0 }
+}
+function burst(px, py, n, cols, v) {
+  for (let i = 0; i < n; i++) {
+    const s = (.15 + Math.random()) * v * D, d = Math.random() * TAU;
+    parts.push({ x: px, y: py, vx: Math.cos(d) * s, vy: Math.sin(d) * s, l: .4 + Math.random() * .7, c: cols[Math.random() * cols.length | 0] });
+  }
+}
+function firework() { burst(W * (.1 + .8 * Math.random()), H * (.06 + .4 * Math.random()), 36, [COL[Math.random() * 7 | 0][1]], 320) }
+function cut(i) {
+  const w = wires[i];
+  if (!w || w.cut) return;
+  if (i == seq[pos]) {
+    w.cut = 1; pos++;
+    burst(CX, w.y, 10, [COL[w.c][1], INK], 220);
+    beep(1500, .04, 'square', .06); beep(700 + pos * 70, .08, 'triangle', .1);
+    if (pos == nw) {
+      st = 3; tr = .9; flash = .2; flashCol = GRN; okTxt = OKS[Math.random() * OKS.length | 0];
+      [784, 659, 784, 1047].forEach((f, k) => setTimeout(() => beep(f, .25, 'triangle', .12), k * 90));
+      if (lvl % 5 == 0) { msg = '¡PUCHIS, UN TAMAL!'; msgCol = GRN; msgT = 1.6 }
+      if (lvl == 24) { tr = 2.4; okTxt = '¡FELIZ NAVIDAD!'; for (let k = 0; k < 5; k++) firework() }
+    } else if (sh) {
+      const s = shuf(wires.map(w => w.slot));
+      wires.forEach((w, k) => w.slot = s[k]);
+    }
+  } else {
+    t -= 3; shake = .3; flash = .25; flashCol = RED;
+    msg = OOPS[Math.random() * OOPS.length | 0] + '  −3s'; msgCol = RED; msgT = 1;
+    beep(130, .2, 'sawtooth', .1);
+  }
+}
+function tap(px, py, slot) {
+  if (st != 1 && slot == null && py > H * .945) return toggleMus();
+  initAudio();
+  if (ac && ac.state == 'suspended') ac.resume();
+  if (st == 0 || (st == 2 && T - deadAt > .9)) return start();
+  if (st != 1) return;
+  let bi = -1, bd = (WY1 - WY0) / nw * .5;
+  wires.forEach((w, i) => {
+    const d = slot == null ? Math.abs(w.y - py) : w.slot == slot ? 0 : 1e9;
+    if (d < bd && (slot != null || (px > BX && px < BX + BW))) { bd = d; bi = i }
+  });
+  if (bi >= 0) cut(bi);
+}
+addEventListener('pointerdown', e => { e.preventDefault(); tap(e.clientX * D, e.clientY * D) });
+addEventListener('keydown', e => {
+  if (e.repeat) return;
+  if (e.code == 'KeyM') toggleMus();
+  else if (e.key >= '1' && e.key <= '7') tap(0, 0, +e.key - 1);
+  else if (e.code == 'Space' || e.code == 'Enter') { e.preventDefault(); if (st != 1) tap(0, 0, 99) }
+});
+addEventListener('contextmenu', e => e.preventDefault());
+
+function update(dt) {
+  T += dt; music();
+  flash = Math.max(0, flash - dt); shake = Math.max(0, shake - dt); msgT = Math.max(0, msgT - dt);
+  for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 900 * D * dt; p.vx *= .98; p.l -= dt }
+  parts = parts.filter(p => p.l > 0);
+  for (const w of wires) w.y += (slotY(w.slot) - w.y) * Math.min(1, dt * 12);
+  if (st == 3) { tr -= dt; if (tr <= 0) { gen(lvl + 1); st = 1 } }
+  if (st == 2) {            // el Volcán de Fuego hace erupción y el cielo se llena de pólvora
+    if (T - deadAt < 4) for (let k = 0; k < 2; k++) parts.push({ x: FX + (Math.random() - .5) * W * .03, y: FY, vx: (Math.random() - .5) * 220 * D, vy: -(300 + Math.random() * 450) * D, l: .7 + Math.random() * .6, c: FIRE[Math.random() * 3 | 0] });
+    if ((fwT -= dt) <= 0) { fwT = .5; firework(); beep(300 + Math.random() * 500, .05, 'triangle', .03) }
+  }
+  if (st != 1) return;
+  t -= dt; age += dt;
+  const q = Math.ceil(t * (t < 4 ? 2 : 1));
+  if (q != lastQ) { lastQ = q; if (t > 0) beep(t < 4 ? 1300 : 900, .03, 'square', .04) }
+  if (t <= 0) { t = 0; die() }
+}
+
+// ---------- dibujo ----------
+function txt(s, px, py, size, col, a, al) {
+  x.globalAlpha = a == null ? 1 : a; x.fillStyle = col || INK; x.textAlign = al || 'center';
+  x.font = 'bold ' + (size * K * D | 0) + 'px ' + FONT; x.fillText(s, px, py); x.globalAlpha = 1;
+}
+function rr(a, b, w, h, r) {
+  x.beginPath(); x.moveTo(a + r, b); x.arcTo(a + w, b, a + w, b + h, r); x.arcTo(a + w, b + h, a, b + h, r);
+  x.arcTo(a, b + h, a, b, r); x.arcTo(a, b, a + w, b, r); x.closePath();
+}
+function drawClue(y0) {
+  x.font = 'bold ' + (14 * K * D | 0) + 'px ' + FONT; x.textAlign = 'left';
+  const gap = 22 * K * D, lines = [[]]; let w = 0;
+  clue.forEach((it, i) => {
+    it.w = x.measureText(it.s).width + gap; it.i = i;
+    if (w + it.w > BW * .9 && w) { lines.push([]); w = 0 }
+    lines[lines.length - 1].push(it); w += it.w;
+  });
+  lines.forEach((ln, j) => {
+    let px = CX - (ln.reduce((a, b) => a + b.w, 0) - gap) / 2;
+    for (const it of ln) {
+      const done = liar ? it.i >= nw - pos : it.i < pos;
+      x.globalAlpha = done ? .2 : 1; x.fillStyle = it.c; x.fillText(it.s, px, y0 + j * H * .034);
+      if (it.i < nw - 1) { x.globalAlpha = .35; x.fillStyle = INK; x.fillText('›', px + it.w - gap * .65, y0 + j * H * .034) }
+      px += it.w;
+    }
+  });
+  x.globalAlpha = 1;
+}
+function drawBomb() {
+  const low = st == 1 && t < 4, blink = low ? .55 + .45 * Math.sin(T * 16) : 1;
+  const memGone = mem && age > 1.5 + nw * .5, off = dark && st == 1 && Math.sin(T * 2.2) > .1;
+  // cabecera
+  if (msgT > 0) txt(msg, CX, H * .045, 16, msgCol, Math.min(1, msgT * 3));
+  else {
+    txt(lvl == 24 ? 'BOMBA 24 · NOCHEBUENA' : 'BOMBA ' + lvl, BX + 4 * D, H * .045, lvl == 24 ? 14 : 17, lvl == 24 ? YEL : INK, 1, 'left');
+    txt('RÉCORD ' + best, BX + BW - 4 * D, H * .045, 12, INK, .55, 'right');
+  }
+  // cuerpo
+  rr(BX, H * .08, BW, H * .9, 14 * D); x.fillStyle = '#16161e'; x.fill();
+  x.strokeStyle = '#2c2c3a'; x.lineWidth = 2 * D; x.stroke();
+  // reloj
+  rr(CX - BW * .3, H * .1, BW * .6, H * .085, 8 * D); x.fillStyle = '#050507'; x.fill();
+  if (st == 3) txt(okTxt, CX, H * .1435, 20, GRN);
+  else txt(Math.max(0, t).toFixed(2), CX, H * .1445, 34, RED, blink);
+  // pista
+  txt(rule, CX, H * .225, rule.length > 30 ? 12.5 : 14);
+  const mods = [];
+  if (liar) mods.push('! LA PISTA TE BABOSEA: HACELO AL REVÉS');
+  if (sh) mods.push('! LAS MECHAS NO SE ESTÁN QUIETAS');
+  if (mem) mods.push('! GRABÁTELO: SE VA A BORRAR');
+  if (dark) mods.push('! SE FUE LA LUZ, VOS');
+  mods.forEach((s, i) => txt(s, CX, H * .257 + i * H * .027, 11.5, RED));
+  const cy = H * .262 + mods.length * H * .027 + H * .012;
+  if (type > 1) { if (memGone) txt('¿TE ACORDÁS?', CX, cy, 14, INK, .4); else drawClue(cy) }
+  // cables
+  const rh = (WY1 - WY0) / nw, x1 = BX + BW * .2, x2 = BX + BW * .93, mid = (x1 + x2) / 2;
+  x.lineCap = 'round';
+  for (const w of wires) {
+    const y = w.y, col = off ? '#3a3a48' : COL[w.c][1], sag = w.sag * rh * .5;
+    rr(BX + BW * .04, y - rh * .27, BW * .11, rh * .54, 5 * D); x.fillStyle = '#050507'; x.fill();
+    txt(off || (memGone && type < 2) ? '?' : w.n, BX + BW * .095, y + D, Math.min(20, rh / D / K * .34), INK, w.cut ? .25 : 1);
+    x.fillStyle = '#2c2c3a'; x.fillRect(x1 - 5 * D, y - 7 * D, 10 * D, 14 * D);
+    x.fillStyle = '#c8102e'; x.fillRect(x2 - 5 * D, y - 11 * D, 11 * D, 22 * D);      // cohetillo
+    x.fillStyle = YEL; x.fillRect(x2 - 5 * D, y - 2 * D, 11 * D, 4 * D);
+    x.strokeStyle = col; x.lineWidth = 7 * K * D;
+    if (w.cut) {
+      x.globalAlpha = .3; const g = BW * .05, dr = rh * .3;
+      x.beginPath(); x.moveTo(x1, y); x.quadraticCurveTo(mid - g * 2, y, mid - g, y + dr); x.stroke();
+      x.beginPath(); x.moveTo(x2, y); x.quadraticCurveTo(mid + g * 2, y, mid + g, y + dr); x.stroke();
+      x.globalAlpha = 1;
+    } else { x.beginPath(); x.moveTo(x1, y); x.quadraticCurveTo(mid, y + sag, x2, y); x.stroke() }
+  }
+}
+function drawIcon(cy) {   // cuete: cilindro rojo con bandas y mecha encendida
+  const h = Math.min(W, H) * .36, w = h * .3, s = .6 + .4 * Math.sin(T * 30), sx = w * .9, sy = -h / 2 - h * .26;
+  x.save(); x.translate(CX, cy + h * .2); x.rotate(.3);
+  rr(-w / 2, -h / 2, w, h, w * .12); x.fillStyle = '#c8102e'; x.fill();
+  x.fillStyle = YEL; x.fillRect(-w / 2, -h * .4, w, h * .06); x.fillRect(-w / 2, h * .34, w, h * .06);
+  x.fillStyle = INK; x.fillRect(-w / 2, -h * .2, w, h * .4);
+  x.fillStyle = '#ffffff22'; x.fillRect(-w * .32, -h / 2, w * .14, h);
+  x.rotate(-Math.PI / 2); txt('CUETE', 0, 0, h / D / K * .1, '#c8102e'); x.rotate(Math.PI / 2);
+  x.fillStyle = '#7a0a1c'; x.fillRect(-w * .2, -h / 2 - h * .02, w * .4, h * .03);
+  x.strokeStyle = INK; x.lineCap = 'round'; x.lineWidth = 3 * D;
+  x.beginPath(); x.moveTo(0, -h / 2); x.quadraticCurveTo(w * .1, sy - h * .06, sx, sy); x.stroke();
+  x.strokeStyle = YEL; x.lineWidth = 2 * D;
+  for (let i = 0; i < 8; i++) {
+    const a = i * TAU / 8 + T * 4, l = w * .5 * (i % 2 ? s : 1.3 - s);
+    x.beginPath(); x.moveTo(sx, sy); x.lineTo(sx + Math.cos(a) * l, sy + Math.sin(a) * l); x.stroke();
+  }
+  x.restore();
+}
+function tamal(px, py, s) {
+  x.fillStyle = '#3f8f4f'; rr(px - s, py - s * .6, s * 2, s * 1.2, s * .3); x.fill();
+  x.strokeStyle = '#d9c89a'; x.lineWidth = s * .14; x.beginPath();
+  x.moveTo(px - s * .45, py - s * .6); x.lineTo(px - s * .45, py + s * .6); x.moveTo(px + s * .45, py - s * .6); x.lineTo(px + s * .45, py + s * .6); x.stroke();
+}
+function bg() {   // noche de Nochebuena: estrellas, estrella de Belén y los volcanes de Agua, Acatenango y Fuego
+  const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#07070f'); g.addColorStop(1, '#2c1a40');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  x.fillStyle = INK;
+  for (const s of STARS) { x.globalAlpha = .4 + .35 * Math.sin(T * s[2] + s[3]); x.fillRect(s[0] * W, s[1] * H * .68, s[4] * D, s[4] * D) }
+  x.globalAlpha = 1;
+  const bx = W * .85, by = H * .3, r = (8 + 2 * Math.sin(T * 3)) * D;
+  x.strokeStyle = YEL; x.lineWidth = 1.5 * D; x.beginPath();
+  x.moveTo(bx - r, by); x.lineTo(bx + r, by); x.moveTo(bx, by - r); x.lineTo(bx, by + r);
+  x.moveTo(bx - r * .4, by - r * .4); x.lineTo(bx + r * .4, by + r * .4); x.moveTo(bx + r * .4, by - r * .4); x.lineTo(bx - r * .4, by + r * .4); x.stroke();
+  x.globalAlpha = .28 + .14 * Math.sin(T * 4); x.fillStyle = RED; x.beginPath(); x.arc(FX, FY, 16 * D, 0, TAU); x.fill(); x.globalAlpha = 1;
+  const vol = (col, x0, p0, p1, py, x3) => {
+    const cy = H * (1 - (1 - py) * .3);
+    x.fillStyle = col; x.beginPath(); x.moveTo(W * x0, H); x.quadraticCurveTo(W * (x0 + (p0 - x0) * .65), cy, W * p0, H * py);
+    x.lineTo(W * p1, H * py); x.quadraticCurveTo(W * (x3 + (p1 - x3) * .65), cy, W * x3, H); x.fill();
+  };
+  vol('#0c0c15', .3, .66, .7, .75, 1.05);      // Acatenango
+  vol('#0f0f19', .5, .84, .88, .765, 1.25);    // Fuego
+  vol('#131320', -.4, .25, .31, .7, .92);      // Agua
+}
+function drawParts() {
+  for (const p of parts) { x.globalAlpha = Math.min(1, p.l * 2); x.fillStyle = p.c; x.fillRect(p.x - 3 * D, p.y - 3 * D, 6 * D, 6 * D) }
+  x.globalAlpha = 1;
+}
+function draw() {
+  x.setTransform(1, 0, 0, 1, 0, 0);
+  bg();
+  x.textBaseline = 'middle';
+  if (shake > 0) x.translate((Math.random() - .5) * shake * 40 * D, (Math.random() - .5) * shake * 40 * D);
+  const go = .55 + .45 * Math.sin(T * 5);
+  if (st == 1 || st == 3) drawBomb();
+  else if (st == 0) {
+    txt('NO ERA ESE,', CX, H * .1, 40, YEL);
+    txt('VOS', CX, H * .165, 40, RED);
+    txt('NOCHEBUENA CHAPINA · DIFÍCIL A PROPÓSITO', CX, H * .225, 10.5, INK, .65);
+    if (best) txt('RÉCORD: ' + best + ' BOMBAS', CX, H * .26, 12, INK, .6);
+    drawIcon(H * .5);
+    txt('YA MERITO SON LAS 12.', CX, H * .735, 13, YEL);
+    txt('CORTÁ LAS MECHAS EN EL ORDEN', CX, H * .775, 13);
+    txt('QUE DICE LA PISTA.', CX, H * .81, 13);
+    txt('A VECES TE BABOSEA.', CX, H * .845, 13, RED);
+    txt('▶ TOCÁ PARA EMPEZAR', CX, H * .92, 15, YEL, go);
+  } else {
+    drawParts();
+    txt(boomTxt, CX, H * .3, boomTxt.length > 5 ? 50 : 64, RED);
+    txt(taunt, CX, H * .4, 15, INK, .85);
+    txt('DESACTIVASTE ' + (lvl - 1) + (lvl == 2 ? ' BOMBA' : ' BOMBAS'), CX, H * .55, 16);
+    txt('RÉCORD: ' + best, CX, H * .6, 13, INK, .6);
+    const nt = Math.min(8, (lvl - 1) / 5 | 0), ts = 13 * K * D;
+    if (nt) { txt('TAMALES GANADOS', CX, H * .66, 11, INK, .7); for (let i = 0; i < nt; i++) tamal(CX + (i - (nt - 1) / 2) * ts * 2.5, H * .705, ts) }
+    else txt('DESACTIVÁ 5 Y TE GANÁS UN TAMAL', CX, H * .67, 11, INK, .6);
+    if (T - deadAt > .9) txt('↻ DALE OTRA VEZ, VOS', CX, H * .82, 15, YEL, go);
+  }
+  if (st != 1 && st != 3) txt('♪ MÚSICA: ' + (mus ? 'SÍ' : 'NO') + ' · TOCÁ AQUÍ PARA CAMBIAR', CX, H * .972, 10, INK, .6);
+  if (st != 2) drawParts();
+  x.setTransform(1, 0, 0, 1, 0, 0);
+  if (flash > 0) { x.globalAlpha = Math.min(.85, flash * 1.4); x.fillStyle = flashCol; x.fillRect(0, 0, W, H); x.globalAlpha = 1 }
+}
+function loop(n) {
+  const dt = Math.min((n - last) / 1e3, .05); last = n;
+  update(dt); draw(); requestAnimationFrame(loop);
+}
+requestAnimationFrame(n => { last = n; loop(n) });
+</script>
+</body>
+</html>
